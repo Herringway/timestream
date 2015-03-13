@@ -3,6 +3,7 @@
 	"description": "A library for producing full time information from partial but linear time information",
 	"copyright": "Copyright © 2015, Cameron",
 	"authors": ["Cameron \"Herringway\" Ross"],
+	"license": "BSL-1.0",
 	"dependencies": {
 	}
 }

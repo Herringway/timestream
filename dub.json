@@ -1,8 +1,8 @@
 {
 	"name": "timestream",
-	"description": "A minimal D application.",
+	"description": "A library for producing full time information from partial but linear time information",
 	"copyright": "Copyright © 2015, Cameron",
-	"authors": ["Cameron"],
+	"authors": ["Cameron \"Herringway\" Ross"],
 	"dependencies": {
 	}
 }

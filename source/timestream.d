@@ -13,9 +13,10 @@ enum DayRoll : bool { No, Yes };
 struct TimeStreamer {
 	immutable(TimeZone) timezone;
 	private DateTime datetime;
-	private Duration delta;
+	private Duration _delta;
 	private FracSec fraction;
-	private bool onlyTimeAssigned = false;
+	private bool timeJustSet = false;
+	private bool _dayRolled = false;
 	/**
 	 * Skips ahead to the specified time of day.
 	 * Params: 
@@ -23,9 +24,13 @@ struct TimeStreamer {
 	 * 			newTime = The time of day to skip to
 	 */
 	void set(DayRoll roll = DayRoll.Yes)(TimeOfDay newTime) nothrow pure {
-		set(DateTime(datetime.date, newTime));
-		if (roll == DayRoll.Yes)
-			onlyTimeAssigned = true;
+		if ((roll == DayRoll.Yes) && (newTime - datetime.timeOfDay < 0.hnsecs)) {
+			set(DateTime(datetime.date+1.days, newTime));
+			_dayRolled = true;
+		}
+		else {
+			set(DateTime(datetime.date, newTime));
+		}
 	}
 	/**
 	 * Skips ahead to the specified date.
@@ -41,39 +46,56 @@ struct TimeStreamer {
 	 * 			newTime = The time to skip to
 	 */
 	void set(DateTime newTime) nothrow pure {
-		if (newTime != datetime)
-			fraction = FracSec.zero;
-		delta = newTime - datetime;
+		_delta = newTime - datetime;
+		if (newTime == datetime)
+			return;
+		fraction = FracSec.zero;
 		datetime = newTime;
-		onlyTimeAssigned = false;
+		timeJustSet = true;
+		_dayRolled = false;
 	}
 	alias add = opOpAssign!"+";
 	void opOpAssign(string op)(Duration dur) if (op == "+") {
 		datetime += dur;
-		delta += dur;
 		fraction = FracSec.from!"hnsecs"(dur.total!"hnsecs" + fraction.hnsecs);
+		_delta += dur;
 	}
+	void opUnary(string s)() if (s == "++") {
+		fraction = FracSec.from!"hnsecs"(fraction.hnsecs + 1);
+		_delta = 1.hnsecs;
+    }
 	/**
 	 * Time difference between "now" and the last set time.
 	 * Returns: A Duration representing the time difference.
 	 */
-	auto Delta() nothrow pure {
-		return delta;
+	deprecated("use delta instead") alias Delta = delta;
+	@property auto delta() nothrow pure {
+		return _delta;
 	}
 	/**
-	 * Returns the "next" time. If rolling is enabled, the smallest possible 
-	 * unit of time will be added to the time to ensure the next time is in the
-	 * future.
-	 * Params: 
-	 *			roll = Specifies whether the time should automatically increment
+	 * Whether or not the date rolled ahead automatically.
 	 */
-	SysTime next(AutoRoll roll = AutoRoll.Yes)() {
-		if (onlyTimeAssigned && (delta < 0.seconds))
-			datetime += 1.days;
-		auto output = SysTime(datetime, fraction, timezone).toUTC();
-		if (roll == AutoRoll.Yes)
-			fraction = FracSec.from!"hnsecs"(fraction.hnsecs + 1);
-		return output;
+	@property bool dayRolled() nothrow pure {
+		return _dayRolled;
+	}
+	/**
+	 * Returns: the current time represented by this stream in UTC.
+	 */
+	@property SysTime now() {
+		return SysTime(datetime, fraction, timezone).toUTC();
+	}
+	/**
+	 * Like now, except the smallest possible unit of time will be added to 
+	 * ensure the time is in the "future," unless the time was just set.
+	 * Returns: the "next" time in UTC. 
+	 */
+	@property SysTime next() {
+		if (timeJustSet)
+			timeJustSet = false;
+		else
+			++this;
+		_dayRolled = false;
+		return now();
 	}
 }
 
@@ -86,39 +108,48 @@ unittest {
 	}
 
 	stream.set(DateTime(2005,1,1,0,0,0));
-	void test(T)(ref TimeStreamer stream, T a, DateTime b, FracSec f = FracSec.zero) {
+	@trusted void test(T,U)(ref TimeStreamer stream, Duration delta, T a, U b) {
 		stream.set(a);
-		auto value = stream.next();
-		assert(value == SysTime(b, f, UTC()), "Error: "~value.toString()~" != "~SysTime(b, f, UTC()).toString());
+		assert(stream.delta == delta, "Delta mismatch: "~delta.toString~" != "~stream.delta.toString());
+		auto value = stream.next;
+		static if (is(U == SysTime))
+			assert(value == b, "Error: "~value.toString()~" != "~b.toUTC().toString());
+		else
+			assert(value == SysTime(b, UTC()), "Error: "~value.toString()~" != "~SysTime(b, UTC()).toString());
 	}
 
 	//DST shenanigans prevent the following tests from working correctly at the moment...
 	//Upstream may be the correct place to deal with this
+	//Also needs proper deltas before it will compile again...
 	
-	/+test(stream, DateTime(2005, 1, 30, 12, 10, 0), DateTime(2005, 01, 30, 20, 10, 0));
-	test(stream, DateTime(2005, 4, 3, 0, 14, 0), DateTime(2005, 10, 30, 08, 14, 0));
-	test(stream, DateTime(2005, 4, 3, 1, 14, 0), DateTime(2005, 10, 30, 09, 14, 0));
-	stream.set(DateTime(2005, 4, 3, 2, 14, 0));
-	assertThrown(stream.next());
-	test(stream, DateTime(2005, 4, 3, 3, 14, 0), DateTime(2005, 10, 30, 10, 14, 0));
-	test(stream, DateTime(2005, 4, 3, 4, 14, 0), DateTime(2005, 10, 30, 11, 14, 0));
-	test(stream, DateTime(2005, 10, 30, 1, 14, 0), DateTime(2005, 10, 30, 08, 14, 0));
-	test(stream, DateTime(2005, 10, 30, 1, 13, 0), DateTime(2005, 10, 30, 09, 13, 0));
-	test(stream, DateTime(2005, 10, 30, 2, 14, 0), DateTime(2005, 10, 30, 10, 14, 0));
-	test(stream, DateTime(2005, 4, 6, 0, 14, 0), DateTime(2005, 04, 06, 07, 14, 0));+/
+	/+test(stream, 29.days + 12.hours + 10.minutes. DateTime(2005, 1, 30, 12, 10, 0), DateTime(2005, 1, 30, 20, 10, 0));
+	test(stream, , DateTime(2005, 4, 3, 0, 14, 0), DateTime(2005, 4, 3, 08, 14, 0));
+	test(stream, , DateTime(2005, 4, 3, 1, 14, 0), DateTime(2005, 4, 3, 09, 14, 0));
+	assertThrown(stream.set(DateTime(2005, 4, 3, 2, 14, 0))); //This time does not exist
+	test(stream, , DateTime(2005, 4, 3, 3, 14, 0), DateTime(2005, 4, 3, 10, 14, 0));
+	test(stream, , DateTime(2005, 4, 3, 4, 14, 0), DateTime(2005, 4, 3, 11, 14, 0));
+	test(stream, , DateTime(2005, 10, 30, 1, 14, 0), DateTime(2005, 10, 30, 8, 14, 0));
+	test(stream, , DateTime(2005, 10, 30, 1, 13, 0), DateTime(2005, 10, 30, 9, 13, 0));
+	test(stream, , DateTime(2005, 10, 30, 2, 14, 0), DateTime(2005, 10, 30, 10, 14, 0));
+	test(stream, , DateTime(2005, 4, 6, 0, 14, 0), DateTime(2005, 4, 6, 7, 14, 0));
+	stream.set(DateTime(2005,1,1,0,0,0));+/
 
-	test(stream, TimeOfDay(12, 14, 0), DateTime(2005, 1, 1, 20, 14, 0));
-	test(stream, TimeOfDay(11, 14, 0), DateTime(2005, 1, 2, 19, 14, 0));
-	test(stream, TimeOfDay(12, 14, 0), DateTime(2005, 1, 2, 20, 14, 0));
-	test(stream, TimeOfDay(12, 14, 0), DateTime(2005, 1, 2, 20, 14, 0), FracSec.from!"hnsecs"(1));
+	test(stream, 12.hours + 14.minutes, TimeOfDay(12, 14, 0), DateTime(2005, 1, 1, 20, 14, 0));
+	test(stream, 23.hours, TimeOfDay(11, 14, 0), DateTime(2005, 1, 2, 19, 14, 0));
+	test(stream, 1.hours, TimeOfDay(12, 14, 0), DateTime(2005, 1, 2, 20, 14, 0));
+	test(stream, 0.hours, TimeOfDay(12, 14, 0), SysTime(DateTime(2005, 1, 2, 20, 14, 0), FracSec.from!"hnsecs"(1), UTC()));
 
-	//Leap seconds unsupported
-	//test(stream, DateTime(2015, 06, 30, 17, 59, 60), DateTime(2015, 06, 30, 23, 59, 60));
+	//Leap seconds unsupported. Also needs a proper delta duration
+	//test(stream, , DateTime(2015, 06, 30, 17, 59, 60), DateTime(2015, 06, 30, 23, 59, 60));
 	
 	stream.set(TimeOfDay(12, 14, 0));
-	auto t1 = stream.next();
+	auto t1 = stream.next;
 	stream += 1.msecs;
-	auto t2 = stream.next();
+	auto t2 = stream.next;
 	assert(t1 < t2);
-	assert(stream.next!(AutoRoll.Yes)() < stream.next!(AutoRoll.Yes)());
+	assert(stream.next < stream.next);
+	assert(stream.delta == 1.hnsecs);
+	stream.set(DateTime(2015, 03, 15, 3, 0, 0));
+	stream.set(TimeOfDay(4,0,0));
+	assert(stream.delta == 1.hours);
 }

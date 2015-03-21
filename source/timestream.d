@@ -2,7 +2,6 @@ private import std.stdio;
 private import std.datetime : TimeZone, SysTime, DateTime, TimeOfDay, days, msecs, Date, UTC;
 private import core.time;
 @safe:
-enum AutoRoll : bool { No, Yes };
 enum DayRoll : bool { No, Yes };
 /**
  * Represents a constantly-increasing time and date. Designed for usage in
@@ -85,6 +84,12 @@ struct TimeStreamer {
 		return SysTime(datetime, fraction, timezone).toUTC();
 	}
 	/**
+	 * Returns: Whether or not DST is in effect for the timezone at this time
+	 */
+ 	@property bool DST() {
+ 		return SysTime(datetime, fraction, timezone).dstInEffect();
+ 	}
+	/**
 	 * Like now, except the smallest possible unit of time will be added to 
 	 * ensure the time is in the "future," unless the time was just set.
 	 * Returns: the "next" time in UTC. 
@@ -99,15 +104,14 @@ struct TimeStreamer {
 	}
 }
 
-unittest {
+@trusted unittest {
 	import std.datetime, std.exception;
 	version(Windows) {
-		auto stream = TimeStreamer(WindowsTimeZone.getTimeZone("Pacific Standard Time"));
+		auto timezone = WindowsTimeZone.getTimeZone("Pacific Standard Time");
 	} else {
-		auto stream = TimeStreamer(TimeZone.getTimeZone("America/Los_Angeles"));
+		auto timezone = TimeZone.getTimeZone("America/Los_Angeles");
 	}
-
-	stream.set(DateTime(2005,1,1,0,0,0));
+	auto stream = TimeStreamer(timezone);
 	@trusted void test(T,U)(ref TimeStreamer stream, Duration delta, T a, U b) {
 		stream.set(a);
 		assert(stream.delta == delta, "Delta mismatch: "~delta.toString~" != "~stream.delta.toString());
@@ -118,31 +122,35 @@ unittest {
 			assert(value == SysTime(b, UTC()), "Error: "~value.toString()~" != "~SysTime(b, UTC()).toString());
 	}
 
-	//DST shenanigans prevent the following tests from working correctly at the moment...
-	//Upstream may be the correct place to deal with this
-	//Also needs proper deltas before it will compile again...
-	
-	/+test(stream, 29.days + 12.hours + 10.minutes. DateTime(2005, 1, 30, 12, 10, 0), DateTime(2005, 1, 30, 20, 10, 0));
-	test(stream, , DateTime(2005, 4, 3, 0, 14, 0), DateTime(2005, 4, 3, 08, 14, 0));
-	test(stream, , DateTime(2005, 4, 3, 1, 14, 0), DateTime(2005, 4, 3, 09, 14, 0));
-	assertThrown(stream.set(DateTime(2005, 4, 3, 2, 14, 0))); //This time does not exist
-	test(stream, , DateTime(2005, 4, 3, 3, 14, 0), DateTime(2005, 4, 3, 10, 14, 0));
-	test(stream, , DateTime(2005, 4, 3, 4, 14, 0), DateTime(2005, 4, 3, 11, 14, 0));
-	test(stream, , DateTime(2005, 10, 30, 1, 14, 0), DateTime(2005, 10, 30, 8, 14, 0));
-	test(stream, , DateTime(2005, 10, 30, 1, 13, 0), DateTime(2005, 10, 30, 9, 13, 0));
-	test(stream, , DateTime(2005, 10, 30, 2, 14, 0), DateTime(2005, 10, 30, 10, 14, 0));
-	test(stream, , DateTime(2005, 4, 6, 0, 14, 0), DateTime(2005, 4, 6, 7, 14, 0));
-	stream.set(DateTime(2005,1,1,0,0,0));+/
+	stream.set(DateTime(2005, 4, 2, 0, 0, 0));
+	if (SysTime(DateTime(2005, 4, 2, 0, 0, 0), timezone).dstInEffect) {
+		stderr.writeln("2005's DST time incorrect on this system, skipping 2005 DST tests");
+	} else {
+		test(stream, 29.days + 12.hours + 10.minutes, DateTime(2005, 1, 30, 12, 10, 0), DateTime(2005, 1, 30, 20, 10, 0));
+		test(stream, 8.weeks + 6.days + 12.hours + 4.minutes, DateTime(2005, 4, 3, 0, 14, 0), DateTime(2005, 4, 3, 08, 14, 0));
+		test(stream, 1.hours, DateTime(2005, 4, 3, 1, 14, 0), DateTime(2005, 4, 3, 09, 14, 0));
+		assert(!stream.DST);
+		assertThrown(stream.set(DateTime(2005, 4, 3, 2, 14, 0))); //This time does not exist
+		test(stream, 1.hours, DateTime(2005, 4, 3, 3, 14, 0), DateTime(2005, 4, 3, 10, 14, 0));
+		assert(stream.DST);
+		test(stream, 1.hours, DateTime(2005, 4, 3, 4, 14, 0), DateTime(2005, 4, 3, 11, 14, 0));
+		test(stream, 29.weeks + 6.days + 14.hours, DateTime(2005, 10, 30, 1, 14, 0), DateTime(2005, 10, 30, 8, 14, 0));
+		test(stream, 59.minutes, DateTime(2005, 10, 30, 1, 13, 0), DateTime(2005, 10, 30, 9, 13, 0));
+		test(stream, 1.hours + 1.minutes, DateTime(2005, 10, 30, 2, 14, 0), DateTime(2005, 10, 30, 10, 14, 0));
+		test(stream, -1 * (29.weeks + 4.days + 10.hours), DateTime(2005, 4, 6, 0, 14, 0), DateTime(2005, 4, 6, 7, 14, 0));
+	}
+	stream.set(DateTime(2005,1,1,0,0,0));
 
 	test(stream, 12.hours + 14.minutes, TimeOfDay(12, 14, 0), DateTime(2005, 1, 1, 20, 14, 0));
 	test(stream, 23.hours, TimeOfDay(11, 14, 0), DateTime(2005, 1, 2, 19, 14, 0));
 	test(stream, 1.hours, TimeOfDay(12, 14, 0), DateTime(2005, 1, 2, 20, 14, 0));
 	test(stream, 0.hours, TimeOfDay(12, 14, 0), SysTime(DateTime(2005, 1, 2, 20, 14, 0), FracSec.from!"hnsecs"(1), UTC()));
 
-	//Leap seconds unsupported. Also needs a proper delta duration
-	//test(stream, , DateTime(2015, 06, 30, 17, 59, 60), DateTime(2015, 06, 30, 23, 59, 60));
+	if (DateTime(2015, 06, 30, 17, 59, 60).ifThrown(DateTime.init) != DateTime.init)
+		test(stream, 547.weeks + 2.days + 4.hours + 45.minutes + 59.seconds + 999.msecs + 999.usecs + 9.hnsecs, DateTime(2015, 06, 30, 17, 59, 60), DateTime(2015, 06, 30, 23, 59, 60));
+	else
+		writeln("Leap seconds unsupported, skipping");
 	
-	stream.set(TimeOfDay(12, 14, 0));
 	auto t1 = stream.next;
 	stream += 1.msecs;
 	auto t2 = stream.next;
@@ -152,4 +160,11 @@ unittest {
 	stream.set(DateTime(2015, 03, 15, 3, 0, 0));
 	stream.set(TimeOfDay(4,0,0));
 	assert(stream.delta == 1.hours);
+
+	stream.set!(DayRoll.Yes)(TimeOfDay(3,0,0));
+	assert(stream.delta == 23.hours);
+	assert(stream.dayRolled);
+	stream.set!(DayRoll.No)(TimeOfDay(2,0,0));
+	assert(stream.delta == -1.hours);
+	assert(!stream.dayRolled);
 }

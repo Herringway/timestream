@@ -1,8 +1,9 @@
 private import std.stdio;
 private import std.datetime : TimeZone, SysTime, DateTime, TimeOfDay, days, msecs, Date, UTC;
+private import std.typecons : Flag;
 private import core.time;
 @safe:
-enum DayRoll : bool { No, Yes };
+alias DayRoll = Flag!"DayRoll";
 /**
  * Represents a constantly-increasing time and date. Designed for usage in
  * scenarios where a full date and time are wanted, but may not be available at
@@ -23,10 +24,10 @@ struct TimeStreamer {
 	 *			roll = Specifies whether the date should roll over automatically
 	 * 			newTime = The time of day to skip to
 	 */
-	void set(DayRoll roll = DayRoll.Yes)(TimeOfDay newTime) {
-		auto old = now;
+	void set(DayRoll roll = DayRoll.yes)(TimeOfDay newTime) {
+		const old = now;
 		set(DateTime(datetime.date, newTime));
-		if ((roll == DayRoll.Yes) && (old > now)) {
+		if ((roll == DayRoll.yes) && (old > now)) {
 			set(DateTime(datetime.date+1.days, newTime));
 			_delta = now - old;
 			_dayRolled = true;
@@ -167,10 +168,10 @@ struct TimeStreamer {
 	stream.set(TimeOfDay(4,0,0));
 	assert(stream.delta == 1.hours);
 
-	stream.set!(DayRoll.Yes)(TimeOfDay(3,0,0));
+	stream.set!(DayRoll.yes)(TimeOfDay(3,0,0));
 	assert(stream.delta == 23.hours);
 	assert(stream.dayRolled);
-	stream.set!(DayRoll.No)(TimeOfDay(2,0,0));
+	stream.set!(DayRoll.no)(TimeOfDay(2,0,0));
 	assert(stream.delta == -1.hours);
 	assert(!stream.dayRolled);
 

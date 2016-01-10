@@ -20,7 +20,7 @@ struct TimeStreamer {
 	private bool adjustAmbiguity = false;
 	/**
 	 * Skips ahead to the specified time of day.
-	 * Params: 
+	 * Params:
 	 *			roll = Specifies whether the date should roll over automatically
 	 * 			newTime = The time of day to skip to
 	 */
@@ -35,7 +35,7 @@ struct TimeStreamer {
 	}
 	/**
 	 * Skips ahead to the specified date.
-	 * Params: 
+	 * Params:
 	 * 			newDate = The date to skip to
 	 */
 	void set(Date newDate) nothrow {
@@ -43,7 +43,7 @@ struct TimeStreamer {
 	}
 	/**
 	 * Skips ahead to the specified time.
-	 * Params: 
+	 * Params:
 	 * 			newTime = The time to skip to
 	 */
 	void set(DateTime newTime) nothrow {
@@ -97,9 +97,9 @@ struct TimeStreamer {
  		return SysTime(datetime, fraction, timezone).isDST2();
  	}
 	/**
-	 * Like now, except the smallest possible unit of time will be added to 
+	 * Like now, except the smallest possible unit of time will be added to
 	 * ensure the time is in the "future," unless the time was just set.
-	 * Returns: the "next" time in UTC. 
+	 * Returns: the "next" time in UTC.
 	 */
 	@property SysTime next() {
 		if (timeJustSet)

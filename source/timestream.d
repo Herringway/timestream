@@ -152,11 +152,11 @@ struct TimeStreamer {
 	test(stream, 1.hours, TimeOfDay(12, 14, 0), DateTime(2005, 1, 2, 20, 14, 0));
 	test(stream, 0.hours, TimeOfDay(12, 14, 0), SysTime(DateTime(2005, 1, 2, 20, 14, 0), 1.hnsecs, UTC()));
 
-	if (DateTime(2015, 06, 30, 17, 59, 60).ifThrown(DateTime.init) != DateTime.init)
+	static if (DateTime(2015, 06, 30, 17, 59, 60).ifThrown(DateTime.init) != DateTime.init)
 		test(stream, 547.weeks + 2.days + 4.hours + 45.minutes + 59.seconds + 999.msecs + 999.usecs + 9.hnsecs, DateTime(2015, 06, 30, 17, 59, 60), DateTime(2015, 06, 30, 23, 59, 60));
 	else
-		writeln("Leap seconds unsupported, skipping");
-	
+		pragma(msg, "Leap seconds unsupported, skipping test");
+
 	auto t1 = stream.next;
 	stream += 1.msecs;
 	auto t2 = stream.next;

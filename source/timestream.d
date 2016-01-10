@@ -14,7 +14,7 @@ struct TimeStreamer {
 	public  immutable(TimeZone) timezone;
 	public  DateTime datetime;
 	private Duration _delta;
-	private FracSec fraction;
+	private Duration fraction;
 	private bool timeJustSet = false;
 	private bool _dayRolled = false;
 	private bool adjustAmbiguity = false;
@@ -54,7 +54,7 @@ struct TimeStreamer {
 		_delta = newTime - datetime;
 		if (newTime == datetime)
 			return;
-		fraction = FracSec.zero;
+		fraction = 0.hnsecs;
 		datetime = newTime;
 		timeJustSet = true;
 		_dayRolled = false;
@@ -63,11 +63,11 @@ struct TimeStreamer {
 	void opOpAssign(string op)(Duration dur) if (op == "+") {
 		datetime += dur;
 		if (dur.total!"hnsecs" != 0)
-			fraction = FracSec.from!"hnsecs"(dur.total!"hnsecs" + fraction.hnsecs);
+			fraction += dur.total!"hnsecs".hnsecs;
 		_delta += dur;
 	}
 	void opUnary(string s)() if (s == "++") {
-		fraction = FracSec.from!"hnsecs"(fraction.hnsecs + 1);
+		fraction += 1.hnsecs;
 		_delta = 1.hnsecs;
     }
 	/**
@@ -151,7 +151,7 @@ struct TimeStreamer {
 	test(stream, 12.hours + 14.minutes, TimeOfDay(12, 14, 0), DateTime(2005, 1, 1, 20, 14, 0));
 	test(stream, 23.hours, TimeOfDay(11, 14, 0), DateTime(2005, 1, 2, 19, 14, 0));
 	test(stream, 1.hours, TimeOfDay(12, 14, 0), DateTime(2005, 1, 2, 20, 14, 0));
-	test(stream, 0.hours, TimeOfDay(12, 14, 0), SysTime(DateTime(2005, 1, 2, 20, 14, 0), FracSec.from!"hnsecs"(1), UTC()));
+	test(stream, 0.hours, TimeOfDay(12, 14, 0), SysTime(DateTime(2005, 1, 2, 20, 14, 0), 1.hnsecs, UTC()));
 
 	if (DateTime(2015, 06, 30, 17, 59, 60).ifThrown(DateTime.init) != DateTime.init)
 		test(stream, 547.weeks + 2.days + 4.hours + 45.minutes + 59.seconds + 999.msecs + 999.usecs + 9.hnsecs, DateTime(2015, 06, 30, 17, 59, 60), DateTime(2015, 06, 30, 23, 59, 60));

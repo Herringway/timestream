@@ -74,7 +74,6 @@ struct TimeStreamer {
 	 * Time difference between "now" and the last set time.
 	 * Returns: A Duration representing the time difference.
 	 */
-	deprecated("use delta instead") alias Delta = delta;
 	@property auto delta() nothrow pure {
 		return _delta + (adjustAmbiguity ? 1.hours : 0.hours);
 	}

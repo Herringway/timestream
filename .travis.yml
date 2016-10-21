@@ -3,3 +3,8 @@ sudo: false
 d:
   - dmd
   - ldc
+install:
+  - wget -q -O - "http://bit.ly/Doveralls" | bash
+script:
+  - dub test -b unittest-cov
+  - ./doveralls

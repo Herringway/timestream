@@ -13,11 +13,12 @@ alias DayRoll = Flag!"DayRoll";
  * Bugs: No leap second support
  */
 struct TimeStreamer {
-	public  DateTime datetime;
+	private DateTime datetime;
 	private Duration _delta;
 	private Duration fraction;
 	private bool timeJustSet = false;
 	private bool _dayRolled = false;
+
 	/**
 	 * Skips ahead to the specified time of day. If DayRoll.yes is specified
 	 * (the default), then the day will automatically increment when the time
@@ -26,29 +27,32 @@ struct TimeStreamer {
 	 *			roll = Specifies whether the date should roll over automatically
 	 * 			newTime = The time of day to skip to
 	 */
-	void set(DayRoll roll = DayRoll.yes)(TimeOfDay newTime) {
-		const old = now;
-		set(DateTime(datetime.date, newTime));
-		if ((roll == DayRoll.yes) && (old > now)) {
-			set(DateTime(datetime.date+1.days, newTime));
-			_delta = now - old;
+	void opAssign(DayRoll roll = DayRoll.yes)(TimeOfDay newTime) {
+		const old = front;
+		this = DateTime(datetime.date, newTime);
+		if ((roll == DayRoll.yes) && (old > front)) {
+			this = DateTime(datetime.date+1.days, newTime);
+			_delta = front - old;
 			_dayRolled = true;
 		}
 	}
+	alias set = opAssign;
+
 	/**
 	 * Skips ahead to the specified date.
 	 * Params:
 	 * 			newDate = The date to skip to
 	 */
-	void set(Date newDate) nothrow {
-		set(DateTime(newDate, datetime.timeOfDay));
+	void opAssign(Date newDate) nothrow {
+		this = DateTime(newDate, datetime.timeOfDay);
 	}
+
 	/**
 	 * Skips ahead to the specified time.
 	 * Params:
 	 * 			newTime = The time to skip to
 	 */
-	void set(DateTime newTime) nothrow pure {
+	void opAssign(DateTime newTime) nothrow pure {
 		_delta = newTime - datetime;
 		if (newTime == datetime)
 			return;
@@ -57,7 +61,7 @@ struct TimeStreamer {
 		timeJustSet = true;
 		_dayRolled = false;
 	}
-	alias add = opOpAssign!"+";
+
 	void opOpAssign(string op)(Duration dur) nothrow pure if (op == "+") {
 		datetime += dur;
 		if (dur.total!"hnsecs" != 0)
@@ -67,38 +71,39 @@ struct TimeStreamer {
 	void opUnary(string s)() @nogc nothrow pure if (s == "++") {
 		fraction += 1.hnsecs;
 		_delta = 1.hnsecs;
-    }
+	}
 	/**
 	 * Time difference between "now" and the last set time.
 	 * Returns: A Duration representing the time difference.
 	 */
-	@property auto delta() nothrow pure @nogc {
+	auto delta() nothrow pure @nogc {
 		return _delta;
 	}
 	/**
 	 * Whether or not the date rolled ahead automatically.
 	 */
-	@property bool dayRolled() nothrow pure @nogc {
+	bool dayRolled() nothrow pure @nogc {
 		return _dayRolled;
 	}
 	/**
 	 * Returns: the current time represented by this stream in UTC.
 	 */
-	@property SysTime now() {
+	SysTime front() {
 		return SysTime(datetime, fraction, UTC());
 	}
+	deprecated alias now = front;
 	/**
 	 * Like now, except the smallest possible unit of time will be added to
 	 * ensure the time is in the "future," unless the time was just set.
 	 * Returns: the "next" time in UTC.
 	 */
-	@property SysTime next() {
+	SysTime next() {
 		if (timeJustSet)
 			timeJustSet = false;
 		else
 			++this;
 		_dayRolled = false;
-		return now();
+		return front;
 	}
 }
 
@@ -107,13 +112,13 @@ unittest {
 	auto stream = TimeStreamer();
 	void test(T)(ref TimeStreamer stream, Duration delta, T a) {
 		import std.conv : to;
-		stream.set(a);
+		stream = a;
 		assert(stream.delta == delta, "Delta mismatch: "~delta.toString~" != "~stream.delta.toString());
-		assert(stream.now.to!T == a);
+		assert(stream.front.to!T == a);
 		assert(stream.next.to!T == a);
 	}
 
-	stream.set(DateTime(2005, 4, 2, 0, 0, 0));
+	stream = DateTime(2005, 4, 2, 0, 0, 0);
 	test(stream, -8.weeks - 5.days - 11.hours - 50.minutes, DateTime(2005, 1, 30, 12, 10, 0));
 	test(stream, 8.weeks + 6.days + 12.hours + 4.minutes, DateTime(2005, 4, 3, 0, 14, 0));
 	test(stream, 1.hours, DateTime(2005, 4, 3, 1, 14, 0));
@@ -123,7 +128,7 @@ unittest {
 	test(stream, -1.minutes, DateTime(2005, 10, 30, 1, 13, 0));
 	test(stream, 1.hours + 1.minutes, DateTime(2005, 10, 30, 2, 14, 0));
 	test(stream, -1 * (29.weeks + 4.days + 2.hours), DateTime(2005, 4, 6, 0, 14, 0));
-	stream.set(DateTime(2005,1,1,0,0,0));
+	stream = DateTime(2005,1,1,0,0,0);
 
 	test(stream, 12.hours + 14.minutes, TimeOfDay(12, 14, 0));
 	test(stream, 23.hours, TimeOfDay(11, 14, 0));
@@ -140,8 +145,8 @@ unittest {
 	assert(t1 < stream.next);
 	assert(stream.next < stream.next);
 	assert(stream.delta == 1.hnsecs);
-	stream.set(DateTime(2015, 03, 15, 3, 0, 0));
-	stream.set(TimeOfDay(4,0,0));
+	stream = DateTime(2015, 03, 15, 3, 0, 0);
+	stream = TimeOfDay(4,0,0);
 	assert(stream.delta == 1.hours);
 
 	stream.set!(DayRoll.yes)(TimeOfDay(3,0,0));
@@ -151,18 +156,18 @@ unittest {
 	assert(stream.delta == -1.hours);
 	assert(!stream.dayRolled);
 
-	stream.set(DateTime(2015, 11,  1, 1, 30, 0));
-	stream.set(DateTime(2015, 11,  1, 1, 0, 0));
+	stream = DateTime(2015, 11,  1, 1, 30, 0);
+	stream = DateTime(2015, 11,  1, 1, 0, 0);
 	assert(stream.delta == -30.minutes);
 	assert(!stream.dayRolled);
-	stream.set(DateTime(2015, 11,  1, 2, 0, 0));
+	stream = DateTime(2015, 11,  1, 2, 0, 0);
 	assert(stream.delta == 1.hours);
-	stream.set(DateTime(2002, 10,  27, 1, 0, 0));
-	stream.set(TimeOfDay(1, 0, 0));
+	stream = DateTime(2002, 10,  27, 1, 0, 0);
+	stream = TimeOfDay(1, 0, 0);
 	assert(!stream.dayRolled);
-	stream.set(TimeOfDay(1, 53, 0));
-	stream.set(TimeOfDay(2,  0, 0));
+	stream = TimeOfDay(1, 53, 0);
+	stream = TimeOfDay(2,  0, 0);
 	assert(!stream.dayRolled);
-	stream.set(Date(2002, 10, 28));
+	stream = Date(2002, 10, 28);
 	assert(!stream.dayRolled);
 }
